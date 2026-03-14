@@ -27,6 +27,21 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+typedef struct {
+    uint16_t dig_T1;
+    int16_t  dig_T2;
+    int16_t  dig_T3;
+    uint16_t dig_P1;
+    int16_t  dig_P2;
+    int16_t  dig_P3;
+    int16_t  dig_P4;
+    int16_t  dig_P5;
+    int16_t  dig_P6;
+    int16_t  dig_P7;
+    int16_t  dig_P8;
+    int16_t  dig_P9;
+} BMP280_CalibData;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -35,7 +50,7 @@
 /** * @name BMP280 Sensor Configuration
  * @{
  */
-#define BMP280_I2C_ADDR       0xEC       // Adresse des Sensors (0x76 << 1). Siehe Datasheet Kapitel 5.2
+#define BMP280_I2C_ADDR       0xEE       // Adresse des Sensors
 #define BMP280_REG_CTRL_MEAS  0xF4       // Register zum Initalisieren der Messung (Siehe 4.3.4 Register 0xF4 "ctrl_meas")
 #define BMP280_REG_DATA_START 0xF7       // Startadresse der Rohdaten (Siehe 4.36 Register 0xF7 -> 0xF9 "press")
 /** @} */
@@ -62,7 +77,8 @@ I2C_HandleTypeDef hi2c1;
 RTC_HandleTypeDef hrtc;
 
 /* USER CODE BEGIN PV */
-
+BMP280_CalibData calib;
+int32_t t_fine;				//Globale Variable t_fine gemäss. Kapitel 3.11.3
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,6 +87,12 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
+
+void BMP280_ReadCalibration(void);
+
+int32_t BMP280_Compensate_T(int32_t adc_T);
+uint32_t BMP280_Compensate_P(int32_t adc_P);
+
 
 /* USER CODE END PFP */
 
@@ -107,6 +129,35 @@ void BMP280_SimpleInit(void) {
     HAL_I2C_Mem_Write(&hi2c1, BMP280_I2C_ADDR, BMP280_REG_CTRL_MEAS, 1, &init_config, 1, HAL_MAX_DELAY);
 }
 
+/**
+ * @brief Liest die werksseitigen Kalibrierparameter aus dem Sensor aus.
+ * Diese Werte sind für jeden BMP280 individuell und werden für die
+ * Berechnung von Temperatur und Druck zwingend benötigt.
+ */
+void BMP280_ReadCalibration(void) {
+    uint8_t data[24] = {0}; // Füllen mit 0
+
+    // Wir lesen 24 Bytes ab Register 0x88
+    // Siehe Datenblatt Kapitel 3.11.1
+    HAL_I2C_Mem_Read(&hi2c1, BMP280_I2C_ADDR, 0x88, 1, data, 24, HAL_MAX_DELAY);
+
+    /* * Jedes Parameter-Paar besteht aus zwei 8-Bit Werten.
+     * Wir fügen sie hier zu 16-Bit Werten (int16_t oder uint16_t) zusammen.
+     * data[1] ist das MSB (höherwertig), data[0] das LSB (niederwertig).
+     */
+    calib.dig_T1 = (data[1] << 8) | data[0];
+    calib.dig_T2 = (data[3] << 8) | data[2];
+    calib.dig_T3 = (data[5] << 8) | data[4];
+    calib.dig_P1 = (data[7] << 8) | data[6];
+    calib.dig_P2 = (data[9] << 8) | data[8];
+    calib.dig_P3 = (data[11] << 8) | data[10];
+    calib.dig_P4 = (data[13] << 8) | data[12];
+    calib.dig_P5 = (data[15] << 8) | data[14];
+    calib.dig_P6 = (data[17] << 8) | data[16];
+    calib.dig_P7 = (data[19] << 8) | data[18];
+    calib.dig_P8 = (data[21] << 8) | data[20];
+    calib.dig_P9 = (data[23] << 8) | data[22];
+}
 
 /**
  * @brief Liest die Rohdaten für Druck und Temperatur in einem burst aus.
@@ -131,7 +182,9 @@ void BMP280_ReadRawData(uint32_t *raw_temp, uint32_t *raw_press) {
 	 * data[4] = Temperatur LSB
 	 * data[5] = Temperatur XLSB
 	 */
-	uint8_t data[6];
+	uint8_t data[6] = {0}; //Füllen mit 0
+
+
 
 	/* 2. Den "Burst Read" ausführen.
 	 * -> Fang bei Register 0xF7 an und gib mir die nächsten 6 Bytes.
@@ -154,9 +207,34 @@ void BMP280_ReadRawData(uint32_t *raw_temp, uint32_t *raw_press) {
      *
      */
 
-    *raw_press = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
-    *raw_temp  = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
+    *raw_press = (((uint32_t)data[0]) << 12) | (((uint32_t)data[1]) << 4) | ((data[2] >> 4) & 0x0F);
+    *raw_temp  = (((uint32_t)data[3]) << 12) | (((uint32_t)data[4]) << 4) | ((data[5] >> 4) & 0x0F);
+}
 
+int32_t BMP280_Compensate_T(int32_t adc_T) {
+    int32_t var1, var2, T;
+    var1 = ((((adc_T >> 3) - ((int32_t)calib.dig_T1 << 1))) * ((int32_t)calib.dig_T2)) >> 11;
+    var2 = (((((adc_T >> 4) - ((int32_t)calib.dig_T1)) * ((adc_T >> 4) - ((int32_t)calib.dig_T1))) >> 12) * ((int32_t)calib.dig_T3)) >> 14;
+    t_fine = var1 + var2;
+    T = (t_fine * 5 + 128) >> 8;
+    return (uint32_t)T;
+}
+
+uint32_t BMP280_Compensate_P(int32_t adc_P) {
+    int64_t var1, var2, p;
+    var1 = ((int64_t)t_fine) - 128000;
+    var2 = var1 * var1 * (int64_t)calib.dig_P6;
+    var2 = var2 + ((var1 * (int64_t)calib.dig_P5) << 17);
+    var2 = var2 + (((int64_t)calib.dig_P4) << 35);
+    var1 = ((var1 * var1 * (int64_t)calib.dig_P3) >> 8) + ((var1 * (int64_t)calib.dig_P2) << 12);
+    var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)calib.dig_P1) >> 33;
+    if (var1 == 0) return 0;
+    p = 1048576 - adc_P;
+    p = (((p << 31) - var2) * 3125) / var1;
+    var1 = (((int64_t)calib.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+    var2 = (((int64_t)calib.dig_P8) * p) >> 19;
+    p = ((p + var1 + var2) >> 8) + (((int64_t)calib.dig_P7) << 4);
+    return (uint32_t)p;
 }
 
 /* USER CODE END 0 */
@@ -194,12 +272,11 @@ int main(void)
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
-  // Wir erstellen zwei Platzhalter für die speicherung der Rohdaten
-  uint32_t raw_temperature = 0;
-  uint32_t raw_pressure = 0;
-
   // Wir Initalisieren den BMP280 Sensor
   BMP280_SimpleInit();
+
+  // Kalibrierwerte einmalig laden
+  BMP280_ReadCalibration();
 
   /* USER CODE END 2 */
 
@@ -223,23 +300,29 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-
+    while (1)
+    {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-	// Rohdaten abfragen
-	BMP280_ReadRawData(&raw_temperature, &raw_pressure);
+      // 1. Rohdaten abfragen
+      uint32_t raw_T, raw_P;
+      BMP280_ReadRawData(&raw_T, &raw_P);
 
-	// 100 Millisekunden warten
-	HAL_Delay(100);
+      // 2. Umrechnen
+      int32_t temp = BMP280_Compensate_T(raw_T);
+      uint32_t press = BMP280_Compensate_P(raw_P);
 
-	//Werte über den Virtuellen Com Port ausegben (Test)
-	printf("T=%ld.%02ld C | P=%lu.%02lu hPa\r\n", raw_temperature, raw_pressure);
+      // 3. Ausgaben der Messwerte
+      // temp/100 ergibt die Vorkommastelle, temp%100 die Nachkommastellen
+      printf("Temp: %ld.%02ld C | Press: %ld.%02ld hPa\r\n",
+             temp/100, temp%100, press/25600, (press%25600)/256);
 
-  }
+      // 4. Eine Sekunde warten
+      HAL_Delay(1000);
+
+    }
   /* USER CODE END 3 */
 }
 
@@ -292,7 +375,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE BEGIN I2C1_Init 0 */
 
-  /* USER CODE END I2C1_Init 0*/
+  /* USER CODE END I2C1_Init 0 */
 
   /* USER CODE BEGIN I2C1_Init 1 */
 
@@ -408,8 +491,7 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
