@@ -306,6 +306,18 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+    	// Wir erstellen zwei Platzhalter welche das Datum und die Uhrzeit halten.
+    	// Wir nutzen dafür den Datentyp RTC_TimeTypeDef
+    	RTC_TimeTypeDef sTime = {0};
+    	RTC_DateTypeDef sDate = {0};
+
+    	// 2. Zeit und Datum auslesen (RTC_FORMAT_BIN gibt uns normale Dezimalzahlen)
+    	// WICHTIG: HAL_RTC_GetDate MUSS nach GetTime aufgerufen werden,
+    	// um die Register für die nächste Messung wieder freizugeben!
+    	HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    	HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+
       // 1. Rohdaten abfragen
       uint32_t raw_T, raw_P;
       BMP280_ReadRawData(&raw_T, &raw_P);
@@ -316,8 +328,9 @@ int main(void)
 
       // 3. Ausgaben der Messwerte
       // temp/100 ergibt die Vorkommastelle, temp%100 die Nachkommastellen
-      printf("Temp: %ld.%02ld C | Press: %ld.%02ld hPa\r\n",
-             temp/100, temp%100, press/25600, (press%25600)/256);
+      printf("[%02d:%02d:%02d] Temp: %ld.%02ld C | Press: %ld.%02ld hPa\r\n",
+                   sTime.Hours, sTime.Minutes, sTime.Seconds,
+                   temp/100, abs(temp%100), press/25600, (press%25600)/256);
 
       // 4. Eine Sekunde warten
       HAL_Delay(1000);
