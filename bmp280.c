@@ -50,7 +50,7 @@ void BMP280_Init(I2C_HandleTypeDef *hi2c) {
 	 * - hi2c1: Die I2C-Schnittstelle unseres STM32 -> Wurde durch die IDE generiert
 	 * - BMP280_I2C_ADDR: Die Adresse des Sensors (0xEC)
 	 * - BMP280_REG_CTRL_MEAS: Das Ziel-Register im Sensor (0xF4)
-	 * - 1: Die Größe der Register-Adresse (1 Byte)
+	 * - 1: Die Grösse der Register-Adresse (1 Byte)
 	 * - &init_config: Zeiger auf unseren Einstellungs-Wert (0x27)
 	 * - 1: Wir senden nur 1 Byte an Daten
 	 * - HAL_MAX_DELAY: Timeout-Schutz, falls der I2C-Bus blockiert ist!
@@ -170,7 +170,7 @@ int32_t BMP280_Compensate_T(int32_t adc_T) {
 /**
  * @brief Berechnet den kompensierten Luftdruck in Pascal.
  * * Benötigt den aktuellen @ref t_fine Wert der Temperaturmessung.
- * Nutzt 64-Bit Arithmetik für maximale Präzision ohne Fließkommazahlen.
+ * Nutzt 64-Bit Arithmetik für maximale Präzision ohne Fliesskommazahlen.
  * * @param adc_P 20-Bit Rohwert vom Sensor.
  * @return uint32_t Luftdruck im Q24.8 Format (Wert / 256 = hPa).
  */
