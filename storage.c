@@ -5,7 +5,7 @@
  * @date March 16, 2026
  *
  * Dieses Modul speichert die Daten im Flash-Speicher des STM32.
- * Die Daten werden in 16-Byte Blöcken (entspricht der Größe von SensorDatensatz_t)
+ * Die Daten werden in 16-Byte Blöcken (entspricht der Grösse von SensorDatensatz_t)
  * gespeichert. Es nutzt das HAL-Flash-Interface für Page-Erase und
  * Double-Word-Programming (64-Bit).
  */
@@ -95,7 +95,7 @@ void EEPROM_PrintAllData(void) {
 	printf("                GESPEICHERTE DATEN\r\n");
 	printf("======================================================\r\n");
 
-	// Wir gehen den Speicher in 16-Byte-Schritten durch (Größe unseres Datensatzes)
+	// Wir gehen den Speicher in 16-Byte-Schritten durch (Grösse unseres Datensatzes)
 	while (current_addr < end_addr) {
 
 		// 1. Prüfen, ob der Speicherplatz leer ist (0xFFFFFFFFFFFFFFFF)
